@@ -1,4 +1,4 @@
-#define DT_DRV_COMPAT ti_tad5X12
+#define DT_DRV_COMPAT ti_tad5x12
 
 #include <errno.h>
 
@@ -19,6 +19,12 @@ struct tad5x12_config
 
 #define tad5x12_write(_i2c, _reg, _value) \
     tad5x12_write_masked(_i2c, _reg, _value, 0xff)
+
+#define tad5x12_set_page(_i2c, _page) \
+    tad5x12_write(_i2c, TAD5X12_REG_PAGE_CFG, _page)
+
+#define tad5x12_sw_reset(_i2c) \
+    tad5x12_write_masked(_i2c, TAD5X12_REG_SW_RESET, 1, BIT(0))
 
 static inline int tad5x12_write_masked(const struct i2c_dt_spec *i2c, uint8_t reg, uint8_t value, uint8_t mask)
 {

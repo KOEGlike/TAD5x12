@@ -1,0 +1,9 @@
+description: TI TAD5X12 dac
+
+include: [i2c-device.yaml]
+
+compatible: "ti,tad5x12"
+
+properties:
+  reg:
+    required: true

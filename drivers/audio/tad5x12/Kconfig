@@ -1,8 +1,8 @@
 config AUDIO_CODEC_TAD5X12
 	bool "TAD5X12 DAC support"
 	default y
+	select I2C
 	depends on DT_HAS_TI_TAD5X12_ENABLED
 	depends on AUDIO_CODEC
-	depends on I2C
 	help
 	  Enable TAD5X12 support
