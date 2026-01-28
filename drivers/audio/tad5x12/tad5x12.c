@@ -20,6 +20,12 @@ struct tad5x12_config
 #define tad5x12_write(_i2c, _reg, _value) \
     tad5x12_write_masked(_i2c, _reg, _value, 0xff)
 
+#define tad5x12_set_page(_i2c, _page) \
+    tad5x12_write(_i2c, TAD5X12_REG_PAGE_CFG, _page)
+
+#define tad5x12_sw_reset(_i2c) \
+    tad5x12_write_masked(_i2c, TAD5X12_REG_SW_RESET, 1, BIT(0))
+
 static inline int tad5x12_write_masked(const struct i2c_dt_spec *i2c, uint8_t reg, uint8_t value, uint8_t mask)
 {
     int ret;
@@ -52,10 +58,10 @@ static int tad5x12_configure(const const struct device *dev, struct audio_codec_
     switch (audiocfg->dai_type)
     {
     case AUDIO_DAI_TYPE_I2S:
-        format = AUDIO_DAI_TYPE_I2S;
+        format = DAC_IF_FORMAT_I2S;
         break;
     case AUDIO_DAI_TYPE_LEFT_JUSTIFIED:
-        format = AUDIO_DAI_TYPE_LEFT_JUSTIFIED;
+        format = DAC_IF_FORMAT_LEFT_JUSTIFIED;
         break;
     default:
         return -ENOTSUP;
@@ -78,6 +84,17 @@ static int tad5x12_configure(const const struct device *dev, struct audio_codec_
     default:
         return -ENOTSUP;
     }
+
+    tad5x12_set_page(&cfg->i2c, 0);
+    tad5x12_sw_reset(&cfg->i2c);
+
+    k_msleep(1);
+
+    tad5x12_set_page(&cfg->i2c, 0);
+    // Exit Sleep Mode with DREG and VREF Enabled
+    tad5x12_write(&cfg->i2c, TAD5X12_DEV_MISC_CFG, BIT(0) | BIT(3));
+    // Set format and word length
+    tad5x12_write_masked(&cfg->i2c, TAD5X12_PASI_CFG0, (format << 6) | (wordlen << 4), BIT_MASK(4) << 4);
 }
 
 static const struct audio_codec_api tad5x12_api = {
