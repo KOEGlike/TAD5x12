@@ -10,8 +10,7 @@
 
 #include "tad5x12.h"
 
-#define LOG_LEVEL CONFIG_AUDIO_CODEC_LOG_LEVEL
-LOG_MODULE_REGISTER(tad5x12);
+LOG_MODULE_REGISTER(tad5x12, CONFIG_AUDIO_CODEC_LOG_LEVEL);
 
 struct tad5x12_config
 {
@@ -33,7 +32,7 @@ static inline int tad5x12_write_masked(const struct i2c_dt_spec *i2c, uint8_t re
     return i2c_reg_update_byte_dt(i2c, reg, mask, value);
 }
 
-static int tad5x12_configure(const const struct device *dev, struct audio_codec_cfg *audiocfg)
+static int tad5x12_configure(const struct device *dev, struct audio_codec_cfg *audiocfg)
 {
     uint8_t format, wordlen;
     const struct tad5x12_config *cfg = dev->config;
@@ -99,7 +98,7 @@ static int tad5x12_configure(const const struct device *dev, struct audio_codec_
     }
 
     // set OUT1P drive strength to headphone level, and 0db gain
-    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_OUT1x_CFG1, 0b01100000);
+    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_OUT1x_CFG1, 0b11100000);
     if (ret < 0)
     {
         LOG_ERR("Failed to set output drive strength and gain on OUT1P");
@@ -107,7 +106,7 @@ static int tad5x12_configure(const const struct device *dev, struct audio_codec_
     }
 
     // set OUT1N drive strength to headphone level, and 0db gain
-    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_OUT1x_CFG2, 0b01100000);
+    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_OUT1x_CFG2, 0b11100000);
     if (ret < 0)
     {
         LOG_ERR("Failed to set output drive strength and gain on OUT1N");
@@ -115,20 +114,75 @@ static int tad5x12_configure(const const struct device *dev, struct audio_codec_
     }
 
     // Enable output channel 1 and 2
-    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_CH_EN, 0b00001100);
+    ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_CH_EN, 0b00001111);
     if (ret < 0)
     {
         LOG_ERR("Failed to enable output channels");
         return -EIO;
     }
 
+    // gang up all volume controls
+    ret = tad5x12_write_masked(&cfg->i2c, TAD5X12_REG_DSP_CFG1, 0b00000001, 0b00000001);
+    if (ret < 0)
+    {
+        LOG_ERR("Failed to gang volume controls");
+        return -EIO;
+    }
+
+    printk("TAD5x12 configured successfully\n");
+
     return 0;
 }
 
+// Audio range from 0 to 255
 static int tad5x12_set_property(const struct device *dev, audio_property_t property,
                                 audio_channel_t channel, audio_property_value_t val)
 {
     const struct tad5x12_config *cfg = dev->config;
+    int ret;
+
+    switch (property)
+    {
+    case AUDIO_PROPERTY_OUTPUT_VOLUME:
+    {
+        uint8_t volume;
+        // Clamp volume to 0-255
+        if (val.vol < 0)
+        {
+            volume = 0;
+        }
+        else if (val.vol > 255)
+        {
+            volume = 255;
+        }
+        else
+        {
+            volume = (uint8_t)val.vol;
+        }
+
+        switch (channel)
+        {
+        case AUDIO_CHANNEL_ALL:
+            ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_DAC_CH1A_CFG0, volume);
+            if (ret < 0)
+            {
+                LOG_ERR("Failed to set volume for all channels");
+                return -EIO;
+            }
+            break;
+
+        default:
+            LOG_ERR("Unsupported channel for volume setting: %d", channel);
+            return -ENOTSUP;
+            break;
+        }
+
+        break;
+    }
+    default:
+        return -ENOTSUP;
+        break;
+    }
 }
 
 static int tad5x12_apply_properties(const struct device *dev)
@@ -165,6 +219,7 @@ static void tad5x12_stop_output(const struct device *dev)
 
 static int tad5x12_init(const struct device *dev)
 {
+    printk("Initializing TAD5x12 audio codec\n");
     const struct tad5x12_config *cfg = dev->config;
     int ret;
 
@@ -185,7 +240,7 @@ static int tad5x12_init(const struct device *dev)
     }
     LOG_DBG("Device reset");
 
-    k_msleep(1);
+    k_msleep(2);
 
     // Exit Sleep Mode with DREG and VREF Enabled
     ret = tad5x12_write(&cfg->i2c, TAD5X12_REG_DEV_MISC_CFG, BIT(0) | BIT(3));
@@ -195,6 +250,7 @@ static int tad5x12_init(const struct device *dev)
         return -EIO;
     }
     LOG_DBG("Exited sleep mode");
+    printk("TAD5x12 audio codec initialized successfully\n");
 
     return 0;
 }
@@ -207,7 +263,7 @@ static const struct audio_codec_api tad5x12_api = {
     .apply_properties = tad5x12_apply_properties,
 };
 
-#define TAD5X12_INIT(inst)                                       \
+#define TAD5X12_DEFINE(inst)                                     \
     static const struct tad5x12_config tad5x12_config_##inst = { \
         .i2c = I2C_DT_SPEC_INST_GET(inst),                       \
     };                                                           \
@@ -216,4 +272,4 @@ static const struct audio_codec_api tad5x12_api = {
                           CONFIG_AUDIO_CODEC_INIT_PRIORITY,      \
                           &tad5x12_api);
 
-DT_INST_FOREACH_STATUS_OKAY(TAD5X12_INIT)
+DT_INST_FOREACH_STATUS_OKAY(TAD5X12_DEFINE)
